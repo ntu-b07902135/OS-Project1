@@ -64,7 +64,13 @@ int fork_process(int i){
 	return c_pid;
 }
 
-int next_process(int running_idx, char* policy){
+int circ_queue[256];
+int circ_head, circ_end;
+
+int next_process(int running_idx, char* policy, int running_cnt, int running_rdy){
+	if(running_cnt < 1 || running_rdy < 1){
+		return -1;
+	}
 	if(running_idx != -1){
 		if(policy[0] == 'S' || policy[0] == 'F'){
 			return running_idx;
@@ -83,16 +89,33 @@ int next_process(int running_idx, char* policy){
 		break;
 	case 'R':
 		if(running_idx == -1){
+		/*
 			for(int i = 0; i < n; i++){
 				if(sched[i].pid > 0 && sched[i].T > 0){
 					result = i;
 					break;
 				}
 			}
-		}else if((t_now - t_last) % 500 == 0){
-			result = (running_idx + 1) % n;
+		*/
+			result = circ_queue[circ_head];
+			circ_head++;
+			circ_head %= 256;
 			while(sched[result].pid < 1 || sched[result].T < 1){
-				result = (result + 1) % n;
+				result = circ_queue[circ_head];
+				circ_head++;
+				circ_head %= 256;
+			}
+		}else if((t_now - t_last) % 500 == 0){
+			circ_queue[circ_end] = running_idx;
+			circ_end++;
+			circ_end %= 256;
+			result = circ_queue[circ_head];
+			circ_head++;
+			circ_head %= 256;
+			while(sched[result].pid < 1 || sched[result].T < 1){
+				result = circ_queue[circ_head];
+				circ_head++;
+				circ_head %= 256;
 			}
 		}else{
 			result = running_idx;
@@ -125,6 +148,7 @@ int main(){
 	sched[n].T = INT_MAX;
 	sched[n].pid = fork_process(n);
 	int running_cnt = n;
+	int running_rdy = 0;
 	int running_idx = -1;
 	while(running_cnt){
 		//fprintf(stderr, "%d:\n", t_now);
@@ -144,10 +168,14 @@ int main(){
 				fprintf(stderr, "%d: child %d created\n", t_now, i);
 				fflush(stderr);
 				fsync(2);
+				running_rdy++;
+				circ_queue[circ_end] = i;
+				circ_end++;
+				circ_end %= 256;
 			}
 		}
 		//fprintf(stderr, "%d: selecting next process...\n", t_now);
-		int next = next_process(running_idx, policy);
+		int next = next_process(running_idx, policy, running_cnt, running_rdy);
 		//fprintf(stderr, "%d: next process %d selected!\n", t_now, next);
 		if(next != running_idx){
 			fprintf(stderr, "%d: child %d context switchs to child %d\n", t_now, running_idx, next);
